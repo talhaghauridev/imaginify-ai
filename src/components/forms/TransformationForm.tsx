@@ -1,14 +1,4 @@
 "use client";
-import React, { ChangeEvent, act, useMemo, useState } from "react";
-import { Form, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import {
-  aspectRatioOptions,
-  defaultValues,
-  transformationTypes,
-} from "@/constants";
-import { CustomField } from "../shared/CustomFiled";
 import {
   Select,
   SelectContent,
@@ -16,9 +6,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AspectRatioKey } from "@/lib/utils";
+import {
+  aspectRatioOptions,
+  defaultValues,
+  transformationTypes,
+} from "@/constants";
+import { AspectRatioKey, debounce, deepMergeObjects } from "@/lib/utils";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useMemo, useState, useTransition } from "react";
+import { FormProvider, useForm } from "react-hook-form";
+import * as z from "zod";
+import { CustomField } from "../shared/CustomFiled";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import MediaUploader from "../shared/MediaUploader";
+
 export const formSchema = z.object({
   title: z.string(),
   aspectRatio: z.string().optional(),
@@ -42,43 +45,80 @@ const TransformationForm = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTransforming, setIsTransforming] = useState(false);
   const [transformationConfig, setTransformationConfig] = useState(config);
+  const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
-  const initialValues = useMemo(
-    () =>
-      data && action === "Update"
-        ? {
-            title: data.title,
-            aspectRatio: data.aspectRatio,
-            color: data.color,
-            prompt: data.prompt,
-            publicId: data.publicId,
-          }
-        : defaultValues,
-    [data, action]
-  );
-
-  const onSelectFieldHandler = (
-    value: string,
-    onChange: (value: string) => void
-  ) => {};
+  const initialValues = useMemo(() => {
+    return data && action === "Update"
+      ? {
+          title: data?.title,
+          aspectRatio: data?.aspectRatio,
+          color: data?.color,
+          prompt: data?.prompt,
+          publicId: data?.publicId,
+        }
+      : defaultValues;
+  }, [data, action]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: initialValues,
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {};
+  const onSelectFieldHandler = (
+    value: string,
+    onChangeField: (value: string) => void
+  ) => {
+    const imageSize = aspectRatioOptions[value as AspectRatioKey];
+
+    setImage((pveImage: any) => ({
+      ...pveImage,
+      width: imageSize.width,
+      height: imageSize.height,
+      aspectRatio: imageSize.aspectRatio,
+    }));
+
+    setNewTransformation(transformationType.config);
+    return onChangeField(value);
+  };
+
+  const onSubmit = (values: z.infer<typeof formSchema>) => {
+    // Implement form submission logic
+    console.log(values);
+  };
 
   const onInputChangeHandler = (
-    filedName: string,
+    fieldName: string,
     value: string,
-    type: string,
+    type: TransformationTypeKey,
     onChangeField: (value: string) => void
-  ) => {};
+  ) => {
+    debounce(() => {
+      setNewTransformation((pveState: any) => ({
+        ...pveState,
+        [type]: {
+          ...pveState[type],
+          [fieldName === "prompt" ? "prompt" : "to"]: value,
+        },
+      }));
+    }, 1000)();
+
+    return onChangeField(value);
+  };
+
+  const onTransformHandler = async () => {
+    setIsTransforming(true);
+
+    setTransformationConfig(
+      deepMergeObjects(newTransformation, transformationConfig)
+    );
+    setNewTransformation(null);
+    startTransition(async () => {});
+  };
+
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
+    <FormProvider {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         {type === "fill" && (
           <CustomField
             control={form.control}
@@ -155,8 +195,52 @@ const TransformationForm = ({
             )}
           </div>
         )}
+
+        <div className="media-uploader-field">
+          <CustomField
+            control={form.control}
+            name="publicId"
+            className="flex size-full flex-col"
+            render={({ field }) => (
+              <MediaUploader
+                onValueChange={field.onChange}
+                setImage={setImage}
+                publicId={field.value}
+                image={image}
+                type={type}
+              />
+            )}
+          />
+
+          {/* <TransformedImage
+            image={image}
+            type={type}
+            title={form.getValues().title}
+            isTransforming={isTransforming}
+            setIsTransforming={setIsTransforming}
+            transformationConfig={transformationConfig}
+          /> */}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <Button
+            type="button"
+            className="submit-button capitalize"
+            disabled={isTransforming || newTransformation === null}
+            onClick={onTransformHandler}
+          >
+            {isTransforming ? "Transforming..." : "Apply Transformation"}
+          </Button>
+          <Button
+            type="submit"
+            className="submit-button capitalize"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Submitting..." : "Save Image"}
+          </Button>
+        </div>
       </form>
-    </Form>
+    </FormProvider>
   );
 };
 
