@@ -29,6 +29,7 @@ export const connectToDatabase = async () => {
     });
 
   cached.conn = await cached.promise;
+  console.log("Mongodb connected");
 
   return cached.conn;
 };
