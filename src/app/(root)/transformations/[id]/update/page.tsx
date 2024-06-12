@@ -1,10 +1,10 @@
+import TransformationForm from "@/components/forms/TransformationForm";
+import Header from "@/components/shared/Header";
+import { transformationTypes } from "@/constants";
+import { getImageById } from "@/lib/actions/image.action";
+import { getUserById } from "@/lib/actions/user.actions";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Header from "@/components/shared/Header";
-import TransformationForm from "@/components/forms/TransformationForm";
-import { transformationTypes } from "@/constants";
-import { getUserById } from "@/lib/actions/user.actions";
-import { getImageById } from "@/lib/actions/image.action";
 
 const Page = async ({ params: { id } }: SearchParamProps) => {
   const { userId } = auth();
