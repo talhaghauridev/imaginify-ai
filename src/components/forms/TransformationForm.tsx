@@ -1,4 +1,9 @@
 "use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+
 import {
   Select,
   SelectContent,
@@ -6,24 +11,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+import { Button } from "@/components/ui/button";
+import { Form } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
   aspectRatioOptions,
+  creditFee,
   defaultValues,
   transformationTypes,
 } from "@/constants";
-import { AspectRatioKey, debounce, deepMergeObjects } from "@/lib/utils";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { FormProvider, useForm } from "react-hook-form";
-import * as z from "zod";
-import { CustomField } from "../shared/CustomFiled";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import MediaUploader from "../shared/MediaUploader";
-import TransformedImage from "../shared/TransformedImage";
-import { getCldImageUrl } from "next-cloudinary";
 import { addImage, updateImage } from "@/lib/actions/image.action";
+import { updateCredits } from "@/lib/actions/user.actions";
+import { AspectRatioKey, debounce, deepMergeObjects } from "@/lib/utils";
+import { getCldImageUrl } from "next-cloudinary";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { CustomField } from "../shared/CustomFiled";
+import { InsufficientCreditsModal } from "../shared/InsufficientCreditsModal";
+import TransformedImage from "../shared/TransformedImage";
+import MediaUploader from "../shared/MediaUploader";
 
 export const formSchema = z.object({
   title: z.string(),
@@ -51,8 +58,8 @@ const TransformationForm = ({
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
-  const initialValues = useMemo(() => {
-    return data && action === "Update"
+  const initialValues =
+    data && action === "Update"
       ? {
           title: data?.title,
           aspectRatio: data?.aspectRatio,
@@ -61,30 +68,14 @@ const TransformationForm = ({
           publicId: data?.publicId,
         }
       : defaultValues;
-  }, [data, action]);
 
+  // 1. Define your form.
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: initialValues,
   });
 
-  const onSelectFieldHandler = (
-    value: string,
-    onChangeField: (value: string) => void
-  ) => {
-    const imageSize = aspectRatioOptions[value as AspectRatioKey];
-
-    setImage((pveImage: any) => ({
-      ...pveImage,
-      width: imageSize.width,
-      height: imageSize.height,
-      aspectRatio: imageSize.aspectRatio,
-    }));
-
-    setNewTransformation(transformationType.config);
-    return onChangeField(value);
-  };
-
+  // 2. Define a submit handler.
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true);
 
@@ -151,17 +142,35 @@ const TransformationForm = ({
     setIsSubmitting(false);
   }
 
+  const onSelectFieldHandler = (
+    value: string,
+    onChangeField: (value: string) => void
+  ) => {
+    const imageSize = aspectRatioOptions[value as AspectRatioKey];
+
+    setImage((prevState: any) => ({
+      ...prevState,
+      aspectRatio: imageSize.aspectRatio,
+      width: imageSize.width,
+      height: imageSize.height,
+    }));
+
+    setNewTransformation(transformationType.config);
+
+    return onChangeField(value);
+  };
+
   const onInputChangeHandler = (
     fieldName: string,
     value: string,
-    type: TransformationTypeKey,
+    type: string,
     onChangeField: (value: string) => void
   ) => {
     debounce(() => {
-      setNewTransformation((pveState: any) => ({
-        ...pveState,
+      setNewTransformation((prevState: any) => ({
+        ...prevState,
         [type]: {
-          ...pveState[type],
+          ...prevState?.[type],
           [fieldName === "prompt" ? "prompt" : "to"]: value,
         },
       }));
@@ -176,13 +185,24 @@ const TransformationForm = ({
     setTransformationConfig(
       deepMergeObjects(newTransformation, transformationConfig)
     );
+
     setNewTransformation(null);
-    startTransition(async () => {});
+
+    startTransition(async () => {
+      await updateCredits(userId, creditFee);
+    });
   };
 
+  useEffect(() => {
+    if (image && (type === "restore" || type === "removeBackground")) {
+      setNewTransformation(transformationType.config);
+    }
+  }, [image, transformationType.config, type]);
+
   return (
-    <FormProvider {...form}>
+    <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        {creditBalance < Math.abs(creditFee) && <InsufficientCreditsModal />}
         <CustomField
           control={form.control}
           name="title"
@@ -190,6 +210,7 @@ const TransformationForm = ({
           className="w-full"
           render={({ field }) => <Input {...field} className="input-field" />}
         />
+
         {type === "fill" && (
           <CustomField
             control={form.control}
@@ -217,6 +238,7 @@ const TransformationForm = ({
             )}
           />
         )}
+
         {(type === "remove" || type === "recolor") && (
           <div className="prompt-field">
             <CustomField
@@ -311,7 +333,7 @@ const TransformationForm = ({
           </Button>
         </div>
       </form>
-    </FormProvider>
+    </Form>
   );
 };
 
